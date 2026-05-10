@@ -71,10 +71,10 @@ const DATA = {
   letter: {
     paragraphs: [
       "13 May is special — because it gave this world someone who can be a best friend, a mentor, and the kind of sister you don’t need a label for.",
-      "We said our first hello in 2024… and since then it’s been everything: fights, happiness, and that harmless flirting that always makes the day lighter.",
+      "We said our first hello in 2024… and since then it’s been everything: fights, happiness, and that harmless flirting and even a KINDERJOY that always makes the day lighter.",
       "What I love most is this: even when we clash, we don’t lose each other. We talk, we fix, we come back — and that’s rare.",
       "On your birthday, I just want you to feel this clearly: I’m proud of you, I’m grateful for you, and I’m always here — not just for your best days, but for all of them.",
-      "Happy Birthday, Anjali. Stay the same magic — and keep shining.",
+      "Happy Birthday, Anju Didi. Stay the same magic — and keep shining.",
     ],
   },
 };
@@ -455,23 +455,18 @@ function letterText() {
 
 function setUpLetter() {
   const type = $("#typewriter");
-  const playBtn = $("#playLetter");
-  const instantBtn = $("#instantLetter");
-  const copyBtn = $("#copyLetter");
+  if (!type) return;
 
   let activeTimer = null;
+  let restartTimer = null;
   let isTyping = false;
 
   const stop = () => {
     isTyping = false;
     if (activeTimer) window.clearTimeout(activeTimer);
     activeTimer = null;
-  };
-
-  const showInstant = () => {
-    stop();
-    type.textContent = letterText();
-    type.classList.add("is-done");
+    if (restartTimer) window.clearTimeout(restartTimer);
+    restartTimer = null;
   };
 
   const typeOut = () => {
@@ -491,6 +486,7 @@ function setUpLetter() {
       if (i >= full.length) {
         isTyping = false;
         type.classList.add("is-done");
+        restartTimer = window.setTimeout(typeOut, 60000);
         return;
       }
 
@@ -502,37 +498,55 @@ function setUpLetter() {
 
     step();
   };
-
-  playBtn.addEventListener("click", typeOut);
-  instantBtn.addEventListener("click", showInstant);
-  copyBtn.addEventListener("click", async () => {
-    const txt = letterText();
-    try {
-      await navigator.clipboard.writeText(txt);
-      copyBtn.textContent = "Copied!";
-      window.setTimeout(() => (copyBtn.textContent = "Copy text"), 1200);
-    } catch {
-      copyBtn.textContent = "Copy failed";
-      window.setTimeout(() => (copyBtn.textContent = "Copy text"), 1200);
-    }
-  });
-
-  const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduceMotion) showInstant();
-  else typeOut();
+  typeOut();
 }
 
 function setUpOpeningScreen() {
   const opening = $("#openingScreen");
   const revealBtn = $("#revealBtn");
+  const countdownText = $("#openingCountdown");
   const main = $("#main");
+  const beforeSong = $("#birthdaySong");
+  const afterSong = $("#mainSong");
   if (!opening || !revealBtn || !main) return;
 
   document.body.style.overflow = "hidden";
+  let hasRevealed = false;
+  let countdown = 10;
+  let countdownTimer = null;
+  let songStarted = false;
+
+  const clearCountdown = () => {
+    if (countdownTimer) {
+      window.clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+  };
 
   const reveal = () => {
+    if (revealBtn.dataset.mode === "reload") {
+      window.location.reload();
+      return;
+    }
+    if (hasRevealed) return;
+    hasRevealed = true;
+    clearCountdown();
+    if (beforeSong) {
+      beforeSong.pause();
+      beforeSong.volume = 1;
+      beforeSong.currentTime = 0;
+      beforeSong.muted = false;
+      beforeSong.volume = 1;
+    }
+    if (afterSong) {
+      afterSong.muted = false;
+      afterSong.volume = 1;
+      afterSong.play().catch(() => {
+        // Browser policy may require interaction in some cases.
+      });
+    }
     main.hidden = false;
-    playPaperBlast(5000);
+    playPaperBlast(50000);
     opening.classList.add("is-hiding");
     document.body.style.overflow = "";
     window.setTimeout(() => opening.remove(), 520);
@@ -542,7 +556,38 @@ function setUpOpeningScreen() {
   revealBtn.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") reveal();
   });
+
+  if (countdownText) {
+    const startCountdown = () => {
+      const tryStartSong = () => {
+        if (!beforeSong || songStarted) return;
+        beforeSong.volume = 1;
+        beforeSong.muted = false;
+        beforeSong.play().then(() => {
+          songStarted = true;
+        }).catch(() => {
+          // Autoplay may be blocked; keep trying during countdown.
+        });
+      };
+
+      tryStartSong();
+      countdownText.textContent = String(countdown);
+      countdownTimer = window.setInterval(() => {
+        tryStartSong();
+        countdown -= 1;
+        countdownText.textContent = String(Math.max(0, countdown));
+
+        if (countdown > 0) return;
+        clearCountdown();
+        revealBtn.dataset.mode = "reload";
+        revealBtn.textContent = "Reload page";
+      }, 1000);
+    };
+
+    startCountdown();
+  }
 }
+
 
 function playPaperBlast(durationMs = 5000) {
   const layer = $("#paperBlast");
@@ -584,11 +629,20 @@ function setUpBirthdaySong() {
 
   const unlockEvents = ["click", "touchstart", "keydown"];
   let started = false;
+  let retryTimer = null;
+  song.volume = 0.9;
+  song.muted = false;
 
   const clearUnlockListeners = () => {
     unlockEvents.forEach((eventName) => {
       document.removeEventListener(eventName, tryPlaySong, true);
     });
+  };
+
+  const clearRetry = () => {
+    if (!retryTimer) return;
+    window.clearInterval(retryTimer);
+    retryTimer = null;
   };
 
   const tryPlaySong = () => {
@@ -599,26 +653,40 @@ function setUpBirthdaySong() {
       playPromise
         .then(() => {
           started = true;
+          clearRetry();
           clearUnlockListeners();
         })
         .catch(() => {
-          // Browser may block autoplay until a user gesture.
+          // Browser may block autoplay; retrying in background.
         });
       return;
     }
 
     started = true;
+    clearRetry();
     clearUnlockListeners();
   };
 
+  // Try immediately at startup.
   tryPlaySong();
+  // Try again after full page load.
+  window.addEventListener("load", tryPlaySong, { once: true });
+  // Keep retrying for initial seconds to maximize chance of autoplay.
+  retryTimer = window.setInterval(() => {
+    if (started) {
+      clearRetry();
+      return;
+    }
+    tryPlaySong();
+  }, 900);
+  window.setTimeout(clearRetry, 12000);
+
   unlockEvents.forEach((eventName) => {
     document.addEventListener(eventName, tryPlaySong, true);
   });
 }
 
 function boot() {
-  setUpBirthdaySong();
   setUpOpeningScreen();
   applyPerson();
   setUpWishPopup();
